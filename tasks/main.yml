@@ -1,0 +1,273 @@
+---
+# tasks file for ansible-role-vmware-vcsa-customization
+
+# Create Datacenter
+- name: Create Datacenter {{ vcenter_datacenter }}
+  community.vmware.vmware_datacenter:
+    datacenter_name: '{{ vcenter_datacenter }}'
+    state: present
+
+# Create cluster
+- name: Create Cluster {{ vcenter_cluster }}
+  community.vmware.vmware_cluster:
+    datacenter_name: "{{ vcenter_datacenter }}"
+    cluster_name: "{{ vcenter_cluster }}"
+
+# Add ESXi hosts to vcenter before configuring them
+- name: Adding ESXi hosts to vCenter # noqa: args[module]
+  community.vmware.vmware_host:
+    esxi_hostname: "{{ item }}"
+    esxi_password: "{{ vault_esxi_password }}"
+    state: present
+    validate_certs: false
+  with_items: "{{ groups['vmware'] }}"
+
+# Basic ESXi host configuration ##
+# Configure NTP
+
+- name: Add NTP servers
+  community.vmware.vmware_host_ntp:
+    esxi_hostname: "{{ item }}"
+    ntp_servers: "{{ ntp_servers }}"
+    validate_certs: false
+  with_items:
+    - "{{ groups['vmware'] }}"
+  tags: task_ntp
+
+- name: Starting ESXi services and set to start at boot # noqa: args[module]
+  community.vmware.vmware_host_service_manager:
+    esxi_hostname: "{{ item.0 }}"
+    service_name: "{{ item.1 }}"
+    service_policy: on
+    state: start
+    validate_certs: false
+  with_nested:
+    - "{{ groups['vmware'] }}"
+    - "{{ esxi_services }}"
+  tags: esxi_services
+
+# Set advanced options
+- name: Set ESXi configuration advanced options # noqa: args[module]
+  community.vmware.vmware_host_config_manager:
+    options:
+      "UserVars.SuppressShellWarning": "{{ suppressshellwarning }}"
+  tags: adv_options
+
+## Network Configuration ##
+# Create a network folder
+- name: Create network folder for DVS
+  community.vmware.vcenter_folder:
+    datacenter_name: '{{ vcenter_datacenter }}'
+    folder_name: "{{ vcenter_dvs_network_folder }}"
+    folder_type: network
+    state: present
+  tags: network_folder
+
+# For idempotency sake, we need to check for the DVS before creating it. This is due to
+# specifying a single DVS uplink during creation. Once the second interface has been added
+# to the switch later in the playbook, subsequent runs of this task will fail with
+# "resource in use" errors because it is trying to remove an uplink that is currently mapped to a port.
+- name: Create DVS for {{ vcenter_cluster }}
+  block:
+    - name: Gather all registered dvswitches
+      community.vmware.vmware_dvswitch_info:
+      register: dvswitch_info
+      tags: dvs_info
+
+    # Extract the numUplinks key from the dvswitch_info variable
+    # This doesn't fire the first time through a playbook run since dvswitch_info comes back empty
+    - name: Get number of DVS uplinks
+      ansible.builtin.set_fact:
+        dvs_uplinks: "{{ dvswitch_info | json_query(jq) }}"
+      vars:
+        jq: "distributed_virtual_switches[].configure.{name: name, Uplinks: settings.properties.general.numUplinks}"
+      when: dvswitch_info.distributed_virtual_switches[0].configure is defined
+
+    - name: Create DVS "{{ vcenter_dvs_name }}"
+      community.vmware.vmware_dvswitch:
+        switch: "{{ vcenter_dvs_name }}"
+        version: "{{ vcenter_dvs_version }}"
+        mtu: "{{ vcenter_dvs_mtu }}"
+        uplink_quantity: "{{ vcenter_dvs_uplink_count }}"
+        uplink_prefix: "{{ vcenter_dvs_uplink_prefix }}"
+        discovery_protocol: "{{ vcenter_dvs_discovery_protocol }}"
+        discovery_operation: "{{ vcenter_dvs_disocvery_operation }}"
+        folder: "{{ vcenter_dvs_folder }}"
+        state: present
+      when: dvswitch_info.distributed_virtual_switches[0].configure is not defined
+      tags:
+        - create_dvs
+
+# The ESXi hosts only have vmnic0 connected to vSwitch0 after initial stand-up.
+# We take vmnic1 and add it to the DVS so we have an uplink to transition between
+# the standard switch and the DVS.
+# For the sake of idempotency, we need to see if the hosts are already added to the
+# DVS with the D1 vmnic. Otherwise, subsequent runs of this take will remove the
+# D0 vmnic from the DVS.
+- name: Add ESXi hosts standby adapter to DVS {{ vcenter_dvs_name }}
+  community.vmware.vmware_dvs_host:
+    esxi_hostname: "{{ item }}"
+    switch_name: "{{ vcenter_dvs_name }}"
+    vmnics:
+      - "{{ hostvars[item]['d1_vmnic'] }}"
+    state: present
+  with_items: "{{ groups['vmware'] }}"
+  when: (dvs_uplinks[0].Uplinks == 1) or (dvs_uplinks is not defined)
+  tags: esxi_to_dvs
+
+- name: Dump DVS portgroup information
+  community.vmware.vmware_dvs_portgroup_info:
+    datacenter: "{{ vcenter_datacenter }}"
+  register: dvpg_info
+  tags: dvs_portgroups
+
+- name: Store DVS portgroups in variable
+  ansible.builtin.set_fact:
+    dvs_portgroup_list: "{{ dvpg_info | json_query(jq) }}"
+  vars:
+    jq: "dvs_portgroup_info.{{ vcenter_dvs_name }}[].{portgroup_name: portgroup_name}"
+  tags: dvs_portgroups
+
+- name: Create vMotion DVS portgroup
+  community.vmware.vmware_dvs_portgroup:
+    portgroup_name: "{{ vcenter_dvs_name }}-{{ vcenter_dvs_vmotion_pg }}"
+    switch_name: "{{ vcenter_dvs_name }}"
+    vlan_id: "{{ vcenter_dvs_vmotion_vlan }}"
+    vlan_trunk: "{{ vcenter_dvs_vmotion_vlan_trunk }}"
+    port_binding: static
+    teaming_policy:
+      load_balance_policy: "{{ vcenter_dvs_portgroup_lb_policy }}"
+      notify_switches: true
+    state: present
+  # Skip the task when we find the port group name in the dvs_portgroup_list variable
+  when: dvs_portgroup_list | regex_search(vcenter_dvs_vmotion_pg) is none
+  tags: create_portgroups
+
+# In the Nebulon TME lab, the management network is the default VLAN for the high speed
+# interfaces, so the VLAN_ID is set to 0. Otherwise would need to be set to
+# the appropriate VLAN.
+- name: Create Virtual Machine DVS portgroup
+  community.vmware.vmware_dvs_portgroup:
+    portgroup_name: "{{ vcenter_dvs_name }}-{{ vcenter_dvs_portgroup_vmnetwork }}"
+    switch_name: "{{ vcenter_dvs_name }}"
+    vlan_id: "{{ vcenter_dvs_vmnetwork_vlan }}"
+    vlan_trunk: "{{ vcenter_dvs_vmnetwork_vlan_trunk }}"
+    port_binding: static
+    teaming_policy:
+      load_balance_policy: "{{ vcenter_dvs_portgroup_lb_policy }}"
+      notify_switches: true
+    state: present
+  # Skip the task when we find the port group name in the dvs_portgroup_list variable
+  when: dvs_portgroup_list | regex_search(vcenter_dvs_portgroup_vmnetwork) is none
+  tags: create_portgroups
+
+- name: Create vMotion VMK interfaces
+  community.vmware.vmware_vmkernel:
+    esxi_hostname: "{{ item }}"
+    dvswitch_name: "{{ vcenter_dvs_name }}"
+    portgroup_name: "{{ vcenter_dvs_name }}-{{ vcenter_dvs_vmotion_pg }}"
+    network:
+      type: 'static'
+      ip_address: "{{ hostvars[item]['vmotionip'] }}"
+      subnet_mask: "{{ hostvars[item]['vmotionnetmask'] }}"
+      tcpip_stack: vmotion
+    state: present
+  with_items: "{{ groups['vmware'] }}"
+  tags: create_vmotion_vmk
+
+# Migrate the VCSA from VM Network to DVS
+- name: Migrate VCSA to DVS
+  community.vmware.vmware_vm_vss_dvs_migrate:
+    vm_name: "{{ vcenter_hostname }}"
+    dvportgroup_name: "{{ vcenter_dvs_name }}-{{ vcenter_dvs_portgroup_vmnetwork }}"
+  tags: migrate_vcsa
+
+# Migrate the vmk0 interface on vSwitch0 to the DVS
+- name: Migrate Management vmk0 to DVS
+  community.vmware.vmware_migrate_vmk:
+    esxi_hostname: "{{ item }}"
+    device: vmk0
+    current_switch_name: vSwitch0
+    current_portgroup_name: "Management Network"
+    migrate_switch_name: "{{ vcenter_dvs_name }}"
+    migrate_portgroup_name: "{{ vcenter_dvs_name }}-{{ vcenter_dvs_portgroup_vmnetwork }}"
+  with_items: "{{ groups['vmware'] }}"
+  tags: move_vmk
+
+# Remove vSwitch0 and free up the D0 interface for the DVS
+- name: Remove vSwitch0
+  community.vmware.vmware_vswitch:
+    esxi_hostname: "{{ item }}"
+    switch: "vSwitch0"
+    state: absent
+  with_items: "{{ groups['vmware'] }}"
+  tags: remove_vswitch0
+
+# Ensure DVS has two uplinks.
+- name: Add uplink to "{{ vcenter_dvs_name }}"
+  community.vmware.vmware_dvswitch:
+    switch: "{{ vcenter_dvs_name }}"
+    version: "{{ vcenter_dvs_version }}"
+    mtu: "{{ vcenter_dvs_mtu }}"
+    uplink_quantity: "{{ vcenter_dvs_uplink_count }}"
+    uplink_prefix: "{{ vcenter_dvs_uplink_prefix }}"
+    discovery_protocol: "{{ vcenter_dvs_discovery_protocol }}"
+    discovery_operation: "{{ vcenter_dvs_disocvery_operation }}"
+    folder: "{{ vcenter_dvs_folder }}"
+    state: present
+
+# Now that we have moved the VMK interfaces to the DVS, add the 2nd 10G interface
+- name: Add D0 adapter to DVS {{ vcenter_dvs_name }}
+  community.vmware.vmware_dvs_host:
+    esxi_hostname: "{{ item }}"
+    switch_name: "{{ vcenter_dvs_name }}"
+    vmnics:
+      - "{{ hostvars[item]['d0_vmnic'] }}"
+      - "{{ hostvars[item]['d1_vmnic'] }}"
+    state: present
+  with_items: "{{ groups['vmware'] }}"
+  tags: d0_to_dvs
+
+# Rescan to make sure all hosts can see all datastores
+- name: Rescan HBA's
+  community.vmware.vmware_host_scanhba:
+    esxi_hostname: '{{ item }}'
+    refresh_storage: true
+    rescan_vmfs: true
+    rescan_hba: true
+  loop: "{{ groups.servers }}"
+  changed_when: false
+  tags: vcls
+
+# Enable DRS and HA
+# As of the 2.2 module version DRS and HA are broken out into separate modules
+# vmware_cluster_ha and vmware_cluster_drs
+
+- name: Enable vSphere DRS
+  community.vmware.vmware_cluster_drs:
+    datacenter_name: "{{ vcenter_datacenter }}"
+    cluster_name: "{{ vcenter_cluster }}"
+    enable: true
+  tags: enable_drs
+
+- name: Enable vSphere HA
+  community.vmware.vmware_cluster_ha:
+    datacenter_name: "{{ vcenter_datacenter }}"
+    cluster_name: "{{ vcenter_cluster }}"
+    enable: true
+  tags: enable_ha
+
+# Map NFS shares - needs testing
+- name: Mount NFS datastores to ESXi
+  community.vmware.vmware_host_datastore:
+    datastore_name: '{{ item[0].name }}'
+    datastore_type: 'nfs'
+    nfs_server: '{{ item[0].nfs_server_ip }}'
+    nfs_path: '{{ item[0].nfs_mount_path }}'
+    nfs_ro: false
+    esxi_hostname: "{{ item[1] }}"
+    state: present
+  with_nested:
+    - "{{ nfs_servers }}"
+    - "{{ groups.vmware }}"
+  tags: task_nfs_mount
