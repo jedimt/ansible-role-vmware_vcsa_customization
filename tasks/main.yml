@@ -17,7 +17,7 @@
 - name: Adding ESXi hosts to vCenter # noqa: args[module]
   community.vmware.vmware_host:
     esxi_hostname: "{{ item }}"
-    esxi_password: "{{ vault_esxi_password }}"
+    esxi_password: "{{ esxi_password }}"
     state: present
     validate_certs: false
   with_items: "{{ groups['vmware'] }}"

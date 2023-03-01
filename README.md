@@ -63,6 +63,12 @@ This role defines the following variables in the vars/main.yml file:
     vcenter_dvs_portgroup_vmnetwork: "vmnetwork"
     vcenter_dvs_portgroup_lb_policy: loadbalance_loadbased
 
+    # Vault credentials
+    vcenter_username: "{{ vault_vcenter_username }}"
+    vcenter_password: "{{ vault_vcenter_password }}"
+    esxi_username: "{{ vault_esxi_username }}"
+    esxi_password: "{{ vault_esxi_password }}"
+
 Additionally, there are four other variables for the vMotion network and vmnic device names of the 10GB interfaces used when configuring the DVS. The role expects these variables to be available in hostvars and I suggest placing them in a host_vars file per host. These could be placed in inventory as well.
 
     vmotionip: "10.100.28.46"
@@ -87,14 +93,14 @@ Example Playbook
       module_defaults:
         group/vmware:
           hostname: '{{ vcenter_hostname }}'
-          username: '{{ vault_vcenter_username }}'
-          password: '{{ vault_vcenter_password }}'
+          username: '{{ vcenter_username }}'
+          password: '{{ vcenter_password }}'
           validate_certs: false
         vmware_host:
           datacenter_name: '{{ vcenter_datacenter }}'
           cluster_name: '{{ vcenter_cluster }}'
           esxi_username: '{{ esxi_username }}'
-          esxi_password: '{{ vault_esxi_password }}'
+          esxi_password: '{{ esxi_password }}'
         vmware_host_service_manager:
           cluster_name: '{{ vcenter_cluster }}'
         vmware_host_config_manager:

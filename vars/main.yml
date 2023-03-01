@@ -46,3 +46,9 @@ vcenter_dvs_vmnetwork_vlan: 0
 vcenter_dvs_vmnetwork_vlan_trunk: false
 vcenter_dvs_portgroup_vmnetwork: "vmnetwork"
 vcenter_dvs_portgroup_lb_policy: loadbalance_loadbased
+
+# Vault credentials
+vcenter_username: "{{ vault_vcenter_username }}"
+vcenter_password: "{{ vault_vcenter_password }}"
+esxi_username: "{{ vault_esxi_username }}"
+esxi_password: "{{ vault_esxi_password }}"
