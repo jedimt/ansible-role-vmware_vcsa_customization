@@ -23,6 +23,16 @@ The role expects an environment that roughly conforms to these assumptions:
 Role Variables
 --------------
 
+The following variables are defined in the defaults/main.yml file:
+
+    # vCenter
+    vcenter_hostname: "devvcsa.tme.nebulon.com"
+    vcenter_datacenter: "SC0"
+    vcenter_cluster: "AppFactory"
+    # dvs
+    # Name cannot contain a "-"
+    vcenter_dvs_name: "dvs_appfactory"
+
 This role defines the following variables in the vars/main.yml file:
 
     ntp_servers: [10.100.72.10,10.100.72.11]
