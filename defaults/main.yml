@@ -1,0 +1,8 @@
+---
+# vCenter
+vcenter_hostname: "devvcsa.tme.nebulon.com"
+vcenter_datacenter: "SC0"
+vcenter_cluster: "AppFactory"
+# dvs
+# Name cannot contain a "-"
+vcenter_dvs_name: "dvs_appfactory"

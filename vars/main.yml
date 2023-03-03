@@ -24,13 +24,7 @@ esxi_services:
 suppressshellwarning: 1
 
 # Vars for the vSphere environment
-# vCenter
-vcenter_hostname: "devvcsa.tme.nebulon.com"
-vcenter_datacenter: "SC0"
-vcenter_cluster: "AppFactory"
-# dvs
-# Name cannot contain a "-"
-vcenter_dvs_name: "dvs_appfactory"
+
 vcenter_dvs_version: "8.0.0"
 vcenter_dvs_mtu: "9000"
 vcenter_dvs_uplink_count: 2
