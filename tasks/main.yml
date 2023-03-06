@@ -54,6 +54,7 @@
   tags: adv_options
 
 ## Network Configuration ##
+
 # Create a network folder
 - name: Create network folder for DVS
   community.vmware.vcenter_folder:
