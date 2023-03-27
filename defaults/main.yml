@@ -6,3 +6,50 @@ vcenter_cluster: "AppFactory"
 # dvs
 # Name cannot contain a "-"
 vcenter_dvs_name: "dvs_appfactory"
+
+# NTP servers to configure on ESXi
+ntp_servers: [10.100.72.10,10.100.72.11]
+
+# NFS mounts to attach to ESXi hosts
+nfs_servers:
+  - name: "ISO"
+    nfs_mount_path: "/data/tme"
+    nfs_server_ip: 10.100.24.8
+  - name: backup
+    nfs_mount_path: "/mnt/data/tme"
+    nfs_server_ip: 10.100.24.202
+
+# Services to automatically start with host
+esxi_services:
+  - ntpd
+  - TSM
+  - TSM-SSH
+
+# Disable SSH enabled warning 'UserVars.SuppressShellWarning'
+# 0 = warning enabled (vmware default)
+# 1 = warning disabled (role default)
+suppressshellwarning: 1
+
+# Vars for the vSphere environment
+
+vcenter_dvs_version: "7.0.3"
+vcenter_dvs_mtu: "9000"
+vcenter_dvs_uplink_count: 2
+vcenter_dvs_uplink_prefix: "Uplink_"
+vcenter_dvs_discovery_protocol: lldp
+vcenter_dvs_disocvery_operation: both
+vcenter_dvs_folder: "/{{ vcenter_datacenter }}/network/{{ vcenter_dvs_name }}"
+vcenter_dvs_network_folder: "{{ vcenter_dvs_name }}"
+vcenter_dvs_vmotion_pg: "vmotion"
+vcenter_dvs_vmotion_vlan: 17
+vcenter_dvs_vmotion_vlan_trunk: false
+vcenter_dvs_vmnetwork_vlan: 0
+vcenter_dvs_vmnetwork_vlan_trunk: false
+vcenter_dvs_portgroup_vmnetwork: "vmnetwork"
+vcenter_dvs_portgroup_lb_policy: loadbalance_loadbased
+
+# Vault credentials
+vcenter_username: "{{ vault_vcenter_username }}"
+vcenter_password: "{{ vault_vcenter_password }}"
+esxi_username: "{{ vault_esxi_username }}"
+esxi_password: "{{ vault_esxi_password }}"
