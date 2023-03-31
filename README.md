@@ -122,7 +122,7 @@ Example Playbook
 
       vars_files:
         # Ansible vault with all required passwords
-        - "/home/apatt/github/demopod-ansible/credentials.yml"
+        - "../../credentials.yml"
 
       roles:
         - ansible-role-vmware-vcsa-customization
