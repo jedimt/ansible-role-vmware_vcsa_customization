@@ -1,6 +1,6 @@
 galaxy_info:
   author: jedimt
-  role_name: vcsa_customization
+  role_name: vmware_vcsa_customization
   description: Customizes a deployed VMware VCSA instance
   company: Nebulon
 
