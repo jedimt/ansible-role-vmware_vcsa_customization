@@ -11,7 +11,7 @@ galaxy_info:
   platforms:
     - name: vSphere
       versions:
-        - "7.0"
+        - "6.7"
 
   galaxy_tags:
     - vsphere
