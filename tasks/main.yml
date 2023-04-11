@@ -1,5 +1,5 @@
 ---
-# tasks file for ansible-role-vmware-vcsa-customization
+# tasks file for jedimt.vmware_vcsa_customization
 
 # Create Datacenter
 - name: Create Datacenter {{ vcenter_datacenter }}

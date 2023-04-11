@@ -118,15 +118,12 @@ Example Playbook
         vmware_datastore_info:
           datacenter_name: '{{ vcenter_datacenter }}'
 
-      tags: play_vcsa_customize
-
       vars_files:
         # Ansible vault with all required passwords
         - "../../credentials.yml"
 
       roles:
-        - ansible-role-vmware-vcsa-customization
-
+        - jedimt.vmware_vcsa_customization
 
 License
 -------
