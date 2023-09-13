@@ -113,8 +113,7 @@
       - "{{ hostvars[item]['d1_vmnic'] }}"
     state: present
   with_items: "{{ groups['vmware'] }}"
-  when: (dvs_uplinks[0].Uplinks == 1) or (dvs_uplinks is not defined)
-  tags: esxi_to_dvs
+  when: (dvs_uplinks is not defined) or (dvs_uplinks[0].Uplinks == 0)
 
 - name: Dump DVS portgroup information
   community.vmware.vmware_dvs_portgroup_info:
